@@ -21,6 +21,6 @@ Agent RAG spécialisé dans le métier d'OPC (Ordonnancement, Pilotage et Coordi
 cd fastapi-backend
 uvicorn main:app --reload
 
-### 1. Backend (Frontend)
+### 1. Frontend
 cd frontend
 npm run dev
