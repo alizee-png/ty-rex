@@ -1,9 +1,9 @@
 # Ty-Rex 🦖
 
-Assistant IA et agent RAG spécialisé dans le métier d'OPC (Ordonnancement, Pilotage et Coordination) et le secteur de la construction.
+Agent RAG spécialisé dans le métier d'OPC (Ordonnancement, Pilotage et Coordination) et le secteur de la construction.
 
 ## Stack Technique
-* **Backend :** FastAPI (Python), LangChain, Agents LLM
+* **Backend :** FastAPI (Python), LangChain, Agent LLM OpenAI
 * **Frontend :** Next.js (TypeScript)
 
 ## Organisation de la base de données
