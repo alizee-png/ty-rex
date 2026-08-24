@@ -1,0 +1,14 @@
+#back-end
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+
+#front-end
+node_modules/
+.next/
+out/
+dist/
+.DS_Store
