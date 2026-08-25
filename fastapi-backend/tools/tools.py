@@ -86,7 +86,7 @@ def query_parquet(parquet_type: str, search_term: Optional[str] = None, filename
                 filtered_df = df
 
             #nettoyage df
-            drop_columns = ["Start_Date", "Finish_Date", "Duration_Number", "filename", "type"]
+            drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type"]
             clean_filtered_df = filtered_df.drop(columns=[col for col in drop_columns if col in filtered_df.columns])
 
             if not filtered_df.empty:
@@ -109,7 +109,7 @@ def query_parquet(parquet_type: str, search_term: Optional[str] = None, filename
                     filtered_df = df
 
                 #nettoyage df
-                drop_columns = ["Start_Date", "Finish_Date", "Duration_Number", "filename", "type"]
+                drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type"]
                 clean_filtered_df = filtered_df.drop(columns=[col for col in drop_columns if col in filtered_df.columns])
 
                 if not filtered_df.empty:
@@ -168,7 +168,7 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
 
     analysis_col_id = next(c for c in analysis_df.columns if 'id' in str(c).lower())
     versus_col_id = next(c for c in versus_df.columns if 'id' in str(c).lower())
-    cols_to_copy = [versus_col_id, "Start_Date_ISO", "Finish_Date_ISO", "Duration"]
+    cols_to_copy = [versus_col_id, "Début_ISO", "Fin_ISO", "Durée"]
     versus_ids = set(versus_df[versus_col_id].dropna())
 
     #stem of filename
@@ -176,16 +176,16 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
 
     #merge colonnes de date de l'ancien planning vers le nouveau
     analysis_df = analysis_df.merge(versus_df[cols_to_copy].rename(columns={
-        "Start_Date_ISO": f"Start_Date_ISO_{clean_filename_versus}", 
-        "Finish_Date_ISO": f"Finish_Date_ISO_{clean_filename_versus}",
-        "Duration": f"Duration_{clean_filename_versus}",
+        "Début_ISO": f"Début_ISO_{clean_filename_versus}", 
+        "Fin_ISO": f"Fin_ISO_{clean_filename_versus}",
+        "Durée": f"Durée_{clean_filename_versus}",
     }), on=analysis_col_id, how="left")
 
     #calcul retard en jours ouvrés
-    col_duration_versus = f"Duration_{clean_filename_versus}"
-    col_start_versus = f"Start_Date_ISO_{clean_filename_versus}"
-    col_source = "Finish_Date_ISO"
-    col_versus = f"Finish_Date_ISO_{clean_filename_versus}"
+    col_duration_versus = f"Durée_{clean_filename_versus}"
+    col_start_versus = f"Début_ISO_{clean_filename_versus}"
+    col_source = "Fin_ISO"
+    col_versus = f"Fin_ISO_{clean_filename_versus}"
 
     s_source = pd.to_datetime(analysis_df[col_source], errors="coerce")
     s_versus = pd.to_datetime(analysis_df[col_versus], errors="coerce")
@@ -216,7 +216,7 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
     print(deleted_lines_df)
 
     #nettoyer le tableau final
-    drop_columns = ["Start_Date", "Finish_Date", "Duration_Number", "filename", "type"]
+    drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type"]
     clean_analysis_df = analysis_df.drop(columns=[col for col in drop_columns if col in analysis_df.columns])
     clean_deleted_lines_df = deleted_lines_df.drop(columns=[col for col in drop_columns if col in deleted_lines_df.columns])
 

@@ -10,12 +10,12 @@ class PlanningParser(BaseParser):
     
     def parse(self, file_obj: BinaryIO, filename: str, **kwargs: Any) -> Dict[str, Any]:
         
-        cols = ['ID', 'Task_Name', 'Duration', 'Start_Date', 'Finish_Date']
+        cols = ['N° Unique', 'Nom', 'Durée', 'Début', 'Fin']
         df = pd.read_excel(file_obj, usecols=cols, engine="openpyxl")
 
-        df['Start_Date_ISO'] = df['Start_Date'].apply(convert_text_to_date)
-        df['Finish_Date_ISO'] = df['Finish_Date'].apply(convert_text_to_date)
-        df['Duration_Number'] = df['Duration'].apply(get_number)
+        df['Début_ISO'] = df['Début'].apply(convert_text_to_date)
+        df['Fin_ISO'] = df['Fin'].apply(convert_text_to_date)
+        df['Durée_Nb'] = df['Durée'].apply(get_number)
 
         #conversion des colonnes en mode string pour stockage parquet
         df = df.astype(str)

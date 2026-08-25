@@ -469,7 +469,7 @@ export default function RAGInterface() {
                           className="hover:bg-[#CAEEFF]/50 transition-colors"
                         >
                           <td
-                            className="p-2 font-medium truncate max-w-[280px]"
+                            className="p-2 font-medium truncate max-w-[200px]"
                             style={{ color: "#5D5E5D" }}
                             title={item.name}
                           >
