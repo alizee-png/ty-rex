@@ -28,6 +28,21 @@ interface FileItem {
 interface Message {
   sender: "user" | "bot";
   text: string;
+  structuredResults?: Array<{
+    type: string;
+    filename: string;
+    data: Record<string, any>[];
+  }>;
+}
+
+interface TableResultItem {
+  type: string;
+  filename: string;
+  data: Record<string, any>[];
+}
+
+interface Props {
+  results: TableResultItem[];
 }
 
 const API_BASE = "http://localhost:8000/api";
@@ -56,7 +71,11 @@ export default function RAGInterface() {
   ]);
   const [templateName, setTemplateName] = useState(""); // Pour nommer le nouveau template
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [showTableModal, setShowTableModal] = useState<string | null>(null);
+  const [showTableModal, setShowTableModal] = useState<Array<{
+    type: string;
+    filename: string;
+    data: Record<string, any>[];
+  }> | null>(null);
 
   const fetchDocuments = async () => {
     try {
@@ -261,35 +280,36 @@ export default function RAGInterface() {
 
       const data = await res.json();
       const rawResponse = data.response || "Réponse reçue sans contenu.";
+      const structuredResults = data.structuredResults || [];
 
-      // Regex pour détecter le début d'un tableau Markdown (ex: |---| ou |:---|)
-      const parts = rawResponse.split(/(?=\|)/);
+      // On prépare un tableau pour accumuler les nouveaux messages du bot
+      const newBotMessages: {
+        sender: "bot";
+        text: string;
+        structuredResults?: Array<{
+          type: string;
+          filename: string;
+          data: Record<string, any>[];
+        }>;
+      }[] = [];
 
-      if (parts.length > 1) {
-        const textBefore = parts[0].trim();
-        const tableContent = parts.slice(1).join("").trim();
-
-        // On prépare un tableau pour accumuler les nouveaux messages du bot
-        const newBotMessages: { sender: "bot"; text: string }[] = [];
-        if (textBefore) {
-          newBotMessages.push({ sender: "bot", text: textBefore });
-        }
-        if (tableContent) {
-          newBotMessages.push({ sender: "bot", text: tableContent });
-        }
-
-        // Ajout des deux messages d'un coup dans l'état
-        setMessages((prev) => [...prev, ...newBotMessages]);
-      } else {
-        // S'il n'y a pas de tableau, on ajoute un seul message classique
-        setMessages((prev) => [
-          ...prev,
-          {
-            sender: "bot",
-            text: rawResponse,
-          },
-        ]);
+      // 1. Si l'agent a écrit du texte, on ajoute un premier message texte
+      if (rawResponse) {
+        newBotMessages.push({ sender: "bot", text: rawResponse });
       }
+
+      // 2. Chaque résultat structuré devient un message séparé
+      if (structuredResults.length > 0) {
+        structuredResults.forEach((result: TableResultItem) => {
+          newBotMessages.push({
+            sender: "bot",
+            text: `Voici les données extraites de ${result.filename} :`,
+            structuredResults: [result],
+          });
+        });
+      }
+
+      setMessages((prev) => [...prev, ...newBotMessages]);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -360,6 +380,95 @@ export default function RAGInterface() {
       </table>
     );
   };
+
+  function TableResult({ results }: Props) {
+    if (!results || results.length === 0) return null;
+
+    return (
+      <div className="space-y-6 my-4">
+        {results.map((item, index) => {
+          const columns = item.data.length > 0 ? Object.keys(item.data[0]) : [];
+
+          return (
+            <div
+              key={index}
+              className="rounded-lg p-4 shadow-sm border"
+              style={{
+                backgroundColor: "#BEE9E8",
+                borderColor: "#5D5E5D",
+                color: "#5D5E5D",
+              }}
+            >
+              {/* En-tête avec les métadonnées */}
+              <div className="mb-3 flex items-center space-x-2">
+                <span
+                  className="text-xs font-bold uppercase px-2 py-1 rounded"
+                  style={{ backgroundColor: "#CAEEFF", color: "#5D5E5D" }}
+                >
+                  {item.type}
+                </span>
+                <span className="text-sm font-medium">
+                  Source : {item.filename}
+                </span>
+              </div>
+
+              {/* Tableau HTML responsive */}
+              <div
+                className="overflow-x-auto rounded border"
+                style={{ borderColor: "#5D5E5D" }}
+              >
+                <table
+                  className="min-w-full divide-y"
+                  style={{ borderColor: "#5D5E5D" }}
+                >
+                  <thead>
+                    <tr style={{ backgroundColor: "#CAEEFF" }}>
+                      {columns.map((col) => (
+                        <th
+                          key={col}
+                          className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider border-r last:border-r-0"
+                          style={{ borderColor: "#5D5E5D", color: "#5D5E5D" }}
+                        >
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody
+                    className="divide-y"
+                    style={{ borderColor: "#5D5E5D" }}
+                  >
+                    {item.data.map((row, rowIndex) => (
+                      <tr
+                        key={rowIndex}
+                        className="transition-colors hover:bg-opacity-50"
+                        style={{
+                          backgroundColor:
+                            rowIndex % 2 === 0 ? "#BEE9E8" : "#CAEEFF",
+                        }}
+                      >
+                        {columns.map((col) => (
+                          <td
+                            key={col}
+                            className="px-4 py-2 text-sm border-r last:border-r-0 whitespace-nowrap"
+                            style={{ borderColor: "#5D5E5D", color: "#5D5E5D" }}
+                          >
+                            {row[col] !== null && row[col] !== undefined
+                              ? String(row[col])
+                              : "-"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     // CONTENEUR PRINCIPAL
@@ -708,8 +817,11 @@ export default function RAGInterface() {
         <div className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="max-w-xl mx-auto space-y-4 w-full">
             {messages.map((msg, index) => {
-              const isTable =
-                msg.sender === "bot" && msg.text.trim().startsWith("|");
+              // On vérifie directement si le message embarque des données structurées JSON
+              const hasTable =
+                msg.sender === "bot" &&
+                msg.structuredResults &&
+                msg.structuredResults.length > 0;
 
               return (
                 <div
@@ -730,7 +842,6 @@ export default function RAGInterface() {
                     </div>
                   )}
 
-                  {/* Ajout de 'relative' ici pour positionner le bouton */}
                   <div
                     className={`relative max-w-[80%] rounded-lg px-4 py-2 text-[13px] border shadow-sm ${
                       msg.sender === "user"
@@ -743,21 +854,23 @@ export default function RAGInterface() {
                       borderColor: "#5D5E5D",
                     }}
                   >
-                    {/* Bouton "Agrandir" dans le coin du message si c'est un tableau */}
-                    {isTable && (
+                    {/* Bouton "Agrandir" dans le coin si c'est un message avec un tableau */}
+                    {hasTable && (
                       <button
-                        onClick={() => setShowTableModal(msg.text)}
-                        className="absolute top-2 right-2 px-2 py-0.5 flex items-center gap-1 shadow-xs transition z-10"
+                        onClick={() =>
+                          setShowTableModal(msg.structuredResults ?? null)
+                        }
+                        className="absolute top-2 right-2 px-2 py-0.5 flex items-center gap-1 shadow-xs transition z-10 hover:bg-black/5 rounded"
                         title="Afficher en plein écran"
                       >
                         <Expand className="w-4 h-4" />
                       </button>
                     )}
 
-                    {/* Affichage conditionnel : Si le message commence par un |, on affiche un tableau HTML propre, sinon le texte normal */}
-                    {isTable ? (
+                    {/* Affichage : Soit on a un tableau JSON, soit c'est du texte normal */}
+                    {hasTable ? (
                       <div className="overflow-x-auto my-1 pt-5">
-                        {renderMarkdownTableToHTML(msg.text)}
+                        <TableResult results={msg.structuredResults ?? []} />
                       </div>
                     ) : (
                       <p className="whitespace-pre-wrap">{msg.text}</p>
@@ -1087,7 +1200,7 @@ export default function RAGInterface() {
 
             {/* Contenu du tableau en grand format avec scroll horizontal ET vertical */}
             <div className="flex-1 overflow-auto bg-white rounded-md p-4 border border-[#5D5E5D]/30 shadow-inner">
-              {renderMarkdownTableToHTML(showTableModal)}
+              <TableResult results={showTableModal} />
             </div>
           </div>
         </div>

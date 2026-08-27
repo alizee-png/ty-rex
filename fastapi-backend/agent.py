@@ -23,6 +23,8 @@ prompt = ChatPromptTemplate.from_messages(
                     "Donne d'abord une réponse synthétique à la question utilisateur, puis cite tes sources."
 
                  "Quand tu utilises compare_plannings :"
+                    "Quand l'utilisateur ne donne pas le nom exact des plannings, utilise search_documents pour essayer de déduire le nom des fichiers,"
+                    "puis demande confirmation à l'utilisateur."
                     "Si l'utilisateur n'a pas utilisé le mot source, demande-lui quelle est la source."
                     "Dans ta réponse utilisateur, concentre-toi UNIQUEMENT sur les modifications apportées au planning source."
                     "- deleted_lines_md : indique quelles lignes ont été supprimées"
@@ -31,11 +33,11 @@ prompt = ChatPromptTemplate.from_messages(
                     "- Si la valeur dans la colonne 'Différence' est NEGATIVE, la tâche est en avance"
                     "- Si la valeur dans la colonne 'Différence' est POSITIVE, la tâche est en retard"
                     "- Si la valeur dans la colonne 'Différence' est positive et la colonne 'Analyse' indique 'Nouvelle ligne', la tâche n'est PAS en retard"
-                    "- Source à citer : affiche le tableau analysis_table_md en markdown EN ENTIER. \n"
+                    
 
                 "Quand tu utilises query_parquet :"
                     "Répond de manière synthétique mais cite les dates exactes."
-                    "- Source à citer : affiche le tableau table_md en markdown. \n"
+                    "- Source à citer : Nom du ou des documents. \n"
 
                 "Quand tu utilises query_main_documentation :"
                     "Répond de manière synthétique."
@@ -52,7 +54,7 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 agent = create_tool_calling_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
 
 #si router trop peu efficace, réfléchir à créer un router selon mots-clés dans requête utilisateur
 #télécharger = ingestion

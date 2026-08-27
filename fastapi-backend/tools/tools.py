@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-from typing import Optional
+from typing import Optional, List
 from langchain_core.tools import tool
 from config import PARQUET_DB_DIR, vector_store
 from ingestion_pipeline.operate_database import get_indexed_documents
+
+LAST_STRUCTURED_RESULTS = []
 
 #query rag - main documents
 #results wanted : context and page number/filename fed to the agent
@@ -60,6 +62,7 @@ def query_parquet(parquet_type: str, search_term: Optional[str] = None, filename
         Règle : N'utilise JAMAIS de mots comme 'tâches' ou 'liste' dans l'argument de recherche.
 
     """
+    global LAST_STRUCTURED_RESULTS
 
     target_dir = Path(PARQUET_DB_DIR) / parquet_type
 
@@ -67,6 +70,7 @@ def query_parquet(parquet_type: str, search_term: Optional[str] = None, filename
         return f"Aucun dossier trouvé pour le type '{parquet_type}'."
 
     formatted_results = []
+    markdown_outputs = []
 
     #recherche dans un seul cr
     if filename:
@@ -86,13 +90,28 @@ def query_parquet(parquet_type: str, search_term: Optional[str] = None, filename
                 filtered_df = df
 
             #nettoyage df
-            drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type"]
+            drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type","template"]
             clean_filtered_df = filtered_df.drop(columns=[col for col in drop_columns if col in filtered_df.columns])
 
             if not filtered_df.empty:
+
+                #json
+                records = (
+                    clean_filtered_df.astype(object)
+                    .where(pd.notna(clean_filtered_df), None)
+                    .to_dict(orient="records")
+                )
+                result_object = {
+                    "type": parquet_type.upper(),
+                    "filename": filename,
+                    "data": records,
+                    }
+                formatted_results.append(result_object)
+
+                 #markdown
                 doc_title = f"### [{parquet_type.upper()}] Source : {filename}"
                 table_md = clean_filtered_df.to_markdown(index=False)
-                formatted_results.append(f"{doc_title}\n{table_md}")
+                markdown_outputs.append(f"{doc_title}\n{table_md}")
 
         except FileNotFoundError:
             print(f"Erreur : Le fichier {path} n'existe pas.")
@@ -109,21 +128,40 @@ def query_parquet(parquet_type: str, search_term: Optional[str] = None, filename
                     filtered_df = df
 
                 #nettoyage df
-                drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type"]
+                drop_columns = ["Début", "Fin", "Durée_Nb", "filename", "type", "template"]
                 clean_filtered_df = filtered_df.drop(columns=[col for col in drop_columns if col in filtered_df.columns])
 
                 if not filtered_df.empty:
+                    #json
+                    records = (
+                        clean_filtered_df.astype(object)
+                        .where(pd.notna(clean_filtered_df), None)
+                        .to_dict(orient="records")
+                    )
+                    result_object = {
+                        "type": parquet_type.upper(),
+                        "filename": parquet_file.stem,
+                        "data": records,
+                    }
+                    
+                    formatted_results.append(result_object)
+
+                    #markdown
                     doc_title = f"### [{parquet_type.upper()}] Source : {parquet_file.stem}"
                     table_md = clean_filtered_df.to_markdown(index=False)
-                    formatted_results.append(f"{doc_title}\n{table_md}")
+                    markdown_outputs.append(f"{doc_title}\n{table_md}")
 
             except Exception as e:
                 print(f"Erreur lors de la lecture du fichier.")
 
-    if not formatted_results:
-        return f"Aucun résultat trouvé dans les {parquet_type}."
+    LAST_STRUCTURED_RESULTS.clear()
+    LAST_STRUCTURED_RESULTS.extend(formatted_results)
+    print(LAST_STRUCTURED_RESULTS)
 
-    return "\n\n".join(formatted_results)
+    if not markdown_outputs:
+        return f"Aucun résultat trouvé dans les {parquet_type}."
+    
+    return "\n\n".join(markdown_outputs)
 
 
 #comparing_analysis - pour l'instant que deux tableaux, coder version où plus d'un versus
@@ -136,9 +174,9 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
     Analyse comparative de deux plannings (doc_type = planning) -> 'compare_plannings'
 
     Args:
-            filename_versus: Nom exact du fichier fourni par l'utilisateur. 
+            filename_versus: Nom du fichier fourni par l'utilisateur. 
             parquet_type: 'planning'. 
-            filename_source: Nom exact du fichier fourni par l'utilisateur qu'il désigne comme la source. 
+            filename_source: Nom du fichier fourni par l'utilisateur qu'il désigne comme la source. 
         
     """
     #ajouter analyse durée
@@ -149,6 +187,7 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
         return f"Aucun dossier trouvé pour le type '{parquet_type}'."
 
     formatted_results = []
+    markdown_outputs = []
 
     #forcer l'extension
     if not filename_source.endswith(".parquet"):
@@ -166,8 +205,8 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
     #df qui va contenir l'analyse
     analysis_df = source_df.copy()
 
-    analysis_col_id = next(c for c in analysis_df.columns if 'id' in str(c).lower())
-    versus_col_id = next(c for c in versus_df.columns if 'id' in str(c).lower())
+    analysis_col_id = next(c for c in analysis_df.columns if 'unique' in str(c).lower())
+    versus_col_id = next(c for c in versus_df.columns if 'unique' in str(c).lower())
     cols_to_copy = [versus_col_id, "Début_ISO", "Fin_ISO", "Durée"]
     versus_ids = set(versus_df[versus_col_id].dropna())
 
@@ -222,15 +261,33 @@ def compare_plannings(parquet_type: str, filename_source: str, filename_versus: 
 
     print(clean_analysis_df)
 
+    #json
+    records = (
+        clean_analysis_df.astype(object)
+        .where(pd.notna(clean_analysis_df), None)
+        .to_dict(orient="records")
+    )
+    result_object = {
+        "type": parquet_type.upper(),
+        "filename": path_source.stem + "_analysis",
+        "data": records,
+    }
+    
+    formatted_results.append(result_object)
+
+    LAST_STRUCTURED_RESULTS.clear()
+    LAST_STRUCTURED_RESULTS.extend(formatted_results)
+    print(LAST_STRUCTURED_RESULTS)
+
     #passage en markdown
     analysis_table_md = clean_analysis_df.to_markdown(index=False)
     deleted_lines_md = clean_deleted_lines_df.to_markdown(index=False)
-    formatted_results.append(f"{analysis_table_md}\n{deleted_lines_md}")
+    markdown_outputs.append(f"{analysis_table_md}\n{deleted_lines_md}")
 
-    if not formatted_results:
+    if not markdown_outputs:
         return f"Aucun résultat trouvé dans les {parquet_type}."
 
-    return "\n\n".join(formatted_results)
+    return "\n\n".join(markdown_outputs)
 
 
 @tool

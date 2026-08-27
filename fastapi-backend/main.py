@@ -13,6 +13,7 @@ from ingestion_pipeline.populate_database import populate_database
 from ingestion_pipeline.operate_database import get_indexed_documents, delete_document_from_db
 from agent import agent_executor
 from config import DATA_DIR
+from tools.tools import LAST_STRUCTURED_RESULTS 
 
 app = FastAPI()
  
@@ -42,6 +43,9 @@ def read_root():
 #answering the chat
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
+
+    LAST_STRUCTURED_RESULTS.clear()
+
     agent = agent_executor
 
     chat_history_text = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
@@ -49,7 +53,12 @@ async def chat_endpoint(request: ChatRequest):
 
     answer_text = result.get("output") if isinstance(result, dict) else str(result)
 
-    return {"response": answer_text}
+    structured_results = LAST_STRUCTURED_RESULTS
+    if not structured_results :
+        print("no structured results")
+
+    print(structured_results)
+    return {"response": answer_text, "structuredResults": structured_results}
 
 #upload file to databse
 @app.post("/api/upload")
