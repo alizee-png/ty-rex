@@ -13,7 +13,7 @@ Agent RAG spécialisé dans le métier d'OPC (Ordonnancement, Pilotage et Coordi
 ## Fonctionnalités principales
 * **Analyse documentaire métier :** Lecture et traitement de PDF, de comptes-rendus de réunion au format tabulaire, et d'extraits Excel de plannings MSProject.
 * **Recherche intelligente :** Capacité pour l'agent de retrouver et d'interroger dynamiquement les documents indexés.
-* **Interface interactive :** Chat en temps réel avec support des tableaux Markdown et gestion de l'historique conversationnel.
+* **Interface interactive :** Chat en temps réel avec support des tableaux source et gestion de l'historique conversationnel.
 
 ## Démarrage rapide
 
