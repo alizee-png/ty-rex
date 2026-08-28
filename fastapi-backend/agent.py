@@ -23,9 +23,8 @@ prompt = ChatPromptTemplate.from_messages(
                     "Donne d'abord une réponse synthétique à la question utilisateur, puis cite tes sources."
 
                  "Quand tu utilises compare_plannings :"
-                    "Quand l'utilisateur ne donne pas le nom exact des plannings, utilise search_documents pour essayer de déduire le nom des fichiers,"
-                    "puis demande confirmation à l'utilisateur."
-                    "Si l'utilisateur n'a pas utilisé le mot source, demande-lui quelle est la source."
+                    "Quand l'utilisateur ne donne pas le nom exact des plannings, utilise search_documents pour essayer de déduire le nom des fichiers."
+                    "Demande TOUJOURS à l'utilisateur confirmation du nom des fichiers à utiliser et quel est le planning source. "
                     "Dans ta réponse utilisateur, concentre-toi UNIQUEMENT sur les modifications apportées au planning source."
                     "- deleted_lines_md : indique quelles lignes ont été supprimées"
                     "- Colonne 'Analyse' de analysis_table_md : indique quelles lignes ont été ajoutées"
