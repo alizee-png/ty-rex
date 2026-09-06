@@ -35,16 +35,22 @@ def get_indexed_documents() -> List[dict]:
 
     if parquet_path.exists():
         for parquet_file in parquet_path.rglob("*.parquet"):
-            filename = parquet_file.name
-            doc_type = parquet_file.parent.name
 
             template = ""
+            filename = ""
+            doc_type = ""
+            
             try:
-                df_meta = pd.read_parquet(parquet_file, columns=["template"])
+                df_meta = pd.read_parquet(parquet_file)
+
                 if not df_meta.empty:
-                    template = df_meta["template"].iloc[0]
-            except Exception:
-                print("Metadata column 'template' not found.")
+                    first_row = df_meta.iloc[0]
+                    template = first_row.get("template", "")
+                    filename = first_row.get("filename", "")
+                    doc_type = first_row.get("type", parquet_file.parent.name)
+                    
+            except Exception as e:
+                print(f"Erreur lors de la lecture des métadonnées de {parquet_file}: {e}")
                 pass
 
             if filename and filename not in indexed_docs:

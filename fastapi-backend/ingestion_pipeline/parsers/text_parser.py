@@ -2,8 +2,8 @@ from typing import Any, BinaryIO, Dict, List
 from langchain_core.documents import Document
 from pypdf import PdfReader
 from .base import BaseParser
+import docx
 
-#dans parser, ajouter code pour gérer un format mail
 class PDFParser(BaseParser):
     def parse(self, file_obj: BinaryIO, filename: str, **kwargs: Any) -> Dict[str, Any]:
         reader = PdfReader(file_obj)
@@ -18,8 +18,6 @@ class PDFParser(BaseParser):
             doc = Document(
                 page_content=text.strip(),
                 metadata={
-                    "filename": filename,
-                    "type": "pdf",
                     "page_number": page_num,
                     "total_pages": len(reader.pages),
                 },
@@ -30,7 +28,37 @@ class PDFParser(BaseParser):
             "content": documents,
             "metadata": {
                 "filename": filename,
-                "type": "pdf",
+                "type": "texte",
+                "total_chunks": len(documents),
+            },
+        }
+
+
+class WordParser(BaseParser):
+    def parse(self, file_obj: BinaryIO, filename: str, **kwargs: Any) -> Dict[str, Any]:
+        doc = docx.Document(file_obj)
+        documents: List[Document] = []
+
+        for idx, para in enumerate(doc.paragraphs, start=1):
+            text = para.text.strip()
+
+            if not text:
+                continue
+
+            document = Document(
+                page_content=text,
+                metadata={
+                    "paragraph_number": idx,
+                    "total_paragraphs": len(doc.paragraphs),
+                },
+            )
+            documents.append(document)
+
+        return {
+            "content": documents,
+            "metadata": {
+                "filename": filename,
+                "type": "texte",
                 "total_chunks": len(documents),
             },
         }

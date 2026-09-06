@@ -2,9 +2,9 @@ from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from config import llm
-from tools.tools import query_chroma, query_parquet, compare_plannings, search_documents
+from tools.tools import query_chroma, query_parquet, compare_plannings, search_documents, query_global_database
 
-tools = [query_chroma, query_parquet, compare_plannings, search_documents]
+tools = [query_chroma, query_parquet, compare_plannings, search_documents, query_global_database]
 
 
 prompt = ChatPromptTemplate.from_messages(
@@ -17,23 +17,23 @@ prompt = ChatPromptTemplate.from_messages(
                 "Ton but est d'analyser la requête utilisateur et d'utiliser l'outil adapté pour y répondre."
 
                 "Si des informations critiques sont manquantes pour exécuter un outil, demande une précision à l'utilisateur avant d'agir. \n"
-                "Utilise search_documents pour associer la requête de l'utilisateur à un fichier."
+                "Utilise TOUJOURS search_documents pour associer la requête de l'utilisateur à un fichier."
+
+                "Si l'utilisateur te demande de chercher dans toute la base de données, utilise query_global_database. \n"
 
                 "REGLES STRICTES pour répondre à l'utilisateur :\n"
                     "Donne d'abord une réponse synthétique à la question utilisateur, puis cite tes sources."
 
                  "Quand tu utilises compare_plannings :"
-                    "Quand l'utilisateur ne donne pas le nom exact des plannings, utilise search_documents pour essayer de déduire le nom des fichiers."
-                    "Demande TOUJOURS à l'utilisateur confirmation du nom des fichiers à utiliser et quel est le planning source. "
-                    "Dans ta réponse utilisateur, concentre-toi UNIQUEMENT sur les modifications apportées au planning source."
-                    "- deleted_lines_md : indique quelles lignes ont été supprimées"
-                    "- Colonne 'Analyse' de analysis_table_md : indique quelles lignes ont été ajoutées"
-                    "- Colonne 'Différence' de analysis_table_md : indique le décalage temporel entre deux tâches"
-                    "- Si la valeur dans la colonne 'Différence' est NEGATIVE, la tâche est en avance"
-                    "- Si la valeur dans la colonne 'Différence' est POSITIVE, la tâche est en retard"
-                    "- Si la valeur dans la colonne 'Différence' est positive et la colonne 'Analyse' indique 'Nouvelle ligne', la tâche n'est PAS en retard"
-                    
-
+                    "Demande TOUJOURS à l'utilisateur confirmation du nom des fichiers à utiliser et quel est le planning référence. "
+                    "Dans ta réponse utilisateur, concentre-toi UNIQUEMENT sur les modifications apportées au planning qui n'est PAS la référence."
+                    "- Colonne 'Lignes_supprimées' : indique quelles lignes ont été supprimées"
+                    "- Colonne 'Analyse_Fin' : indique le décalage temporel d'une tâche entre les deux plannings"
+                    "- Si la valeur dans la colonne 'Analyse_Fin' est NEGATIVE, la tâche est en avance"
+                    "- Si la valeur dans la colonne 'Analyse_Fin' est POSITIVE, la tâche est en retard"
+                    "- Colonne 'Analyse_Durée' : indique la différence de durée d'une tâche entre les deux plannings"
+                    "- Colonne 'Nouvelles_lignes' : indique quelles lignes ont été ajoutées "
+                
                 "Quand tu utilises query_parquet :"
                     "Répond de manière synthétique mais cite les dates exactes."
                     "- Source à citer : Nom du ou des documents. \n"
@@ -53,7 +53,7 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 agent = create_tool_calling_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False, handle_parsing_errors=True)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True, return_intermediate_steps=True)
 
 #si router trop peu efficace, réfléchir à créer un router selon mots-clés dans requête utilisateur
 #télécharger = ingestion

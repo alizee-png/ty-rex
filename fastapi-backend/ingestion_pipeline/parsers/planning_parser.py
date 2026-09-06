@@ -17,6 +17,12 @@ class PlanningParser(BaseParser):
         df['Fin_ISO'] = df['Fin'].apply(convert_text_to_date)
         df['Durée_Nb'] = df['Durée'].apply(get_number)
 
+
+        #ajout des métadonnées à la df
+        doc_type = "planning"
+        df["filename"] = filename
+        df["type"] = doc_type
+
         #conversion des colonnes en mode string pour stockage parquet
         df = df.astype(str)
         
@@ -24,7 +30,7 @@ class PlanningParser(BaseParser):
             "content": df,
             "metadata": {
                 "filename": filename,
-                "type": "planning"
+                "type": doc_type
             }
         }
 

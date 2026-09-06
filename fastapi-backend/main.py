@@ -6,14 +6,16 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, UploadFile
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Any, Optional, List
 
 from ingestion_pipeline.parser_router import ParserRouter
 from ingestion_pipeline.populate_database import populate_database
 from ingestion_pipeline.operate_database import get_indexed_documents, delete_document_from_db
 from agent import agent_executor
 from config import DATA_DIR
-from tools.tools import LAST_STRUCTURED_RESULTS 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 
 app = FastAPI()
  
@@ -30,8 +32,21 @@ class Message(BaseModel):
     role: str 
     content: str
 
+
 class ChatRequest(BaseModel):
     messages: List[Message]
+
+#--- endpoints
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    print("--- ERREUR 422 DÉTAILLÉE ---")
+    print("Erreurs :", exc.errors())
+    print(" Corps reçu :", exc.body)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
 
 #--- endpoints
 
@@ -43,22 +58,43 @@ def read_root():
 #answering the chat
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
+    current_user_message = next(
+        (msg.content for msg in reversed(request.messages) if msg.role == "user"),
+        None,
+    )
+    if not current_user_message:
+        raise HTTPException(status_code=400, detail="Le message utilisateur est vide.")
 
-    LAST_STRUCTURED_RESULTS.clear()
 
-    agent = agent_executor
+    result = agent_executor.invoke({"input": current_user_message})
 
-    chat_history_text = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
-    result = agent.invoke({"input": chat_history_text})
+    # 1. Le texte de synthèse rédigé par l'agent
+    synthesis_text = result.get("output", "")
 
-    answer_text = result.get("output") if isinstance(result, dict) else str(result)
+    print(synthesis_text)
 
-    structured_results = LAST_STRUCTURED_RESULTS
-    if not structured_results :
-        print("no structured results")
+    # 2. Extraction des tableaux et des documents des étapes intermédiaires
+    collected_tables = []
+    collected_documents = []
+    intermediate_steps = result.get("intermediate_steps", [])
+    
+    for action, tool_output in intermediate_steps:
 
-    print(structured_results)
-    return {"response": answer_text, "structuredResults": structured_results}
+        if isinstance(tool_output, dict):
+            if "tables" in tool_output:
+                collected_tables.extend(tool_output["tables"])
+            if "documents" in tool_output:
+                collected_documents.extend(tool_output["documents"])
+
+    print(collected_tables)
+    print(collected_documents)
+
+    # 3. Réponse unifiée complète conforme au contrat
+    return {
+        "message": synthesis_text,
+        "tables": collected_tables,
+        "documents": collected_documents
+    }
 
 #upload file to databse
 @app.post("/api/upload")
@@ -70,7 +106,7 @@ async def upload_document(
     template: Optional[str] = Form(None),  #requis si doc_type == "cr"
 ):
 
-    allowed_extensions = [".pdf", ".docx", ".xls", ".xlsx"]
+    allowed_extensions = [".pdf", ".docx", ".xls", ".xlsx", ".eml", ".msg"]
 
     #check if file has a name
     if not file.filename:
@@ -83,13 +119,13 @@ async def upload_document(
         raise HTTPException(status_code=400, detail=f"Format non supporté. Formats acceptés : {allowed_extensions}",)
 
     #check if needed metadata is precised for each extension
-    if (file_ext in [".xlsx", ".xls"] and doc_type == "cr") and not sheet_name:
+    if (file_ext in [".xlsx", ".xls"] and doc_type == "tableau") and not sheet_name:
         raise HTTPException(status_code=400, detail="Le champ 'Onglet' est obligatoire pour les fichiers Excel.",)
 
     if file_ext == ".docx" and table_number is None:
         raise HTTPException(status_code=400, detail="Le champ 'N° tableau' est obligatoire pour les fichiers Word.",)
 
-    if doc_type == "cr" and not template:
+    if doc_type == "tableau" and not template:
         raise HTTPException(status_code=400, detail="Le champ 'Modèle' est obligatoire pour les compte-rendus (cr).",)
 
     #path to save the file
@@ -158,7 +194,7 @@ async def upload_document(
 async def list_documents():
     try:
         documents = get_indexed_documents()
-        print("DEBUG - Documents lus depuis le Parquet :", documents) # <--- Regarde ton terminal ici
+        print("DEBUG - Documents lus :", documents) # <--- Regarde ton terminal ici
         return {
             "status": "success",
             "count": len(documents),

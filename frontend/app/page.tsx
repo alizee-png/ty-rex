@@ -28,16 +28,14 @@ interface FileItem {
 interface Message {
   sender: "user" | "bot";
   text: string;
-  structuredResults?: Array<{
-    type: string;
-    filename: string;
-    data: Record<string, any>[];
-  }>;
+  tables?: { title: string; data: any }[];
+  documents?: { title: string; data: string }[];
 }
 
 interface TableResultItem {
-  type: string;
-  filename: string;
+  type?: string;
+  filename?: string;
+  title?: string;
   data: Record<string, any>[];
 }
 
@@ -59,7 +57,7 @@ export default function RAGInterface() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"upload" | "database">("upload");
   const [dbFiles, setDbFiles] = useState<any[]>([]);
-  const [selectedDocType, setSelectedDocType] = useState<string>("ALL");
+  const [selectedDocType, setSelectedDocType] = useState<string>("tous");
   const [loading, setLoading] = useState(true);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateText, setTemplateText] = useState("");
@@ -71,11 +69,10 @@ export default function RAGInterface() {
   ]);
   const [templateName, setTemplateName] = useState(""); // Pour nommer le nouveau template
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [showTableModal, setShowTableModal] = useState<Array<{
-    type: string;
-    filename: string;
-    data: Record<string, any>[];
-  }> | null>(null);
+  const [showTableModal, setShowTableModal] = useState<{
+    tables?: { title: string; data: any }[];
+    documents?: { title: string; data: string }[];
+  } | null>(null);
 
   const fetchDocuments = async () => {
     try {
@@ -108,7 +105,7 @@ export default function RAGInterface() {
   }, []);
 
   const filteredDbFiles = dbFiles.filter((item) => {
-    if (selectedDocType === "ALL") return true;
+    if (selectedDocType === "tous") return true;
     return item.docType === selectedDocType;
   });
 
@@ -119,7 +116,7 @@ export default function RAGInterface() {
       const newFile: FileItem = {
         id: crypto.randomUUID(),
         name: selectedFile.name,
-        docType: "cr",
+        docType: "tableau",
         sheetName: "",
         tableNumber: "",
         template: "",
@@ -250,27 +247,25 @@ export default function RAGInterface() {
   };
 
   //envoi message utilisateur à l'agent
-  const handleSendMessage = async (e: React.SubmitEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || isChatLoading) return;
 
     const userText = inputMessage;
 
-    // tableau historique messages
-    const updatedMessages = [
-      ...messages,
-      { sender: "user" as const, text: userText },
-    ];
+    const updatedMessages = [{ sender: "user" as const, text: userText }];
 
     setMessages(updatedMessages);
     setInputMessage("");
     setIsChatLoading(true);
 
     try {
-      const payloadMessages = updatedMessages.map((msg) => ({
-        role: msg.sender === "user" ? "user" : "assistant",
-        content: msg.text,
-      }));
+      const payloadMessages = [
+        {
+          role: "user",
+          content: userText,
+        },
+      ];
 
       const res = await fetch(`${API_BASE}/chat`, {
         method: "POST",
@@ -279,106 +274,47 @@ export default function RAGInterface() {
       });
 
       const data = await res.json();
-      const rawResponse = data.response || "Réponse reçue sans contenu.";
-      const structuredResults = data.structuredResults || [];
+      const newMessages: Message[] = [];
 
-      // On prépare un tableau pour accumuler les nouveaux messages du bot
-      const newBotMessages: {
-        sender: "bot";
-        text: string;
-        structuredResults?: Array<{
-          type: string;
-          filename: string;
-          data: Record<string, any>[];
-        }>;
-      }[] = [];
-
-      // 1. Si l'agent a écrit du texte, on ajoute un premier message texte
-      if (rawResponse) {
-        newBotMessages.push({ sender: "bot", text: rawResponse });
+      // 2. Ajouter la réponse textuelle principale si elle existe
+      if (data.message) {
+        newMessages.push({ sender: "bot", text: data.message });
       }
 
-      // 2. Chaque résultat structuré devient un message séparé
-      if (structuredResults.length > 0) {
-        structuredResults.forEach((result: TableResultItem) => {
-          newBotMessages.push({
+      console.log(data.message);
+
+      // 3. Créer un message distinct pour chaque tableau reçu
+      if (data.tables && Array.isArray(data.tables)) {
+        data.tables.forEach((tableData: any) => {
+          newMessages.push({
             sender: "bot",
-            text: `Voici les données extraites de ${result.filename} :`,
-            structuredResults: [result],
+            text: `Voici le tableau pour : ${tableData.title || "Résultat structuré"}`,
+            tables: [tableData], // Un tableau par message
           });
         });
       }
 
-      setMessages((prev) => [...prev, ...newBotMessages]);
-    } catch (err) {
+      // 4. Créer un message distinct pour chaque document textuel reçu
+      if (data.documents && Array.isArray(data.documents)) {
+        data.documents.forEach((docData: any) => {
+          newMessages.push({
+            sender: "bot",
+            text: `Extrait pertinent : ${docData.title || "Document"}`,
+            documents: [docData], // Un document par message
+          });
+        });
+      }
+
+      setMessages((prev) => [...prev, ...newMessages]);
+    } catch (error) {
+      console.error("Erreur lors de la requête chat:", error);
       setMessages((prev) => [
         ...prev,
-        {
-          sender: "bot",
-          text: "Désolé, une erreur s'est produite lors de la communication avec l'agent.",
-        },
+        { sender: "bot", text: "Une erreur est survenue lors du traitement." },
       ]);
     } finally {
       setIsChatLoading(false);
     }
-  };
-
-  const renderMarkdownTableToHTML = (markdownText: string) => {
-    const lines = markdownText
-      .trim()
-      .split("\n")
-      .filter((line) => line.includes("|"));
-
-    if (lines.length < 2) return <p>{markdownText}</p>;
-
-    const headers = lines[0]
-      .split("|")
-      .map((cell) => cell.trim())
-      .filter(Boolean);
-    const rows = lines.slice(2).map((line) =>
-      line
-        .split("|")
-        .map((cell) => cell.trim())
-        .filter(Boolean),
-    );
-
-    return (
-      <table
-        className="w-full text-left text-xs border-collapse bg-white rounded shadow-sm"
-        style={{ color: "#5D5E5D" }}
-      >
-        <thead style={{ backgroundColor: "#CAEEFF" }}>
-          <tr>
-            {headers.map((header, i) => (
-              <th
-                key={i}
-                className="p-2 border-b border-[#5D5E5D] font-semibold"
-              >
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr
-              key={rowIndex}
-              className="border-b border-gray-200 hover:bg-gray-50/50"
-            >
-              {row.map((cell, cellIndex) => (
-                <td
-                  key={cellIndex}
-                  className="p-2 truncate max-w-[180px]"
-                  title={cell}
-                >
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
   };
 
   function TableResult({ results }: Props) {
@@ -387,7 +323,18 @@ export default function RAGInterface() {
     return (
       <div className="space-y-6 my-4">
         {results.map((item, index) => {
-          const columns = item.data.length > 0 ? Object.keys(item.data[0]) : [];
+          let rows: Record<string, any>[] = [];
+          try {
+            const parsed =
+              typeof item.data === "string" ? JSON.parse(item.data) : item.data;
+            rows = Array.isArray(parsed)
+              ? parsed
+              : parsed?.data || parsed?.rows || [];
+          } catch (e) {
+            rows = [];
+          }
+
+          const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
 
           return (
             <div
@@ -399,70 +346,75 @@ export default function RAGInterface() {
                 color: "#5D5E5D",
               }}
             >
-              {/* En-tête avec les métadonnées */}
+              {/* Titre du tableau */}
               <div className="mb-3 flex items-center space-x-2">
-                <span
-                  className="text-xs font-bold uppercase px-2 py-1 rounded"
-                  style={{ backgroundColor: "#CAEEFF", color: "#5D5E5D" }}
-                >
-                  {item.type}
-                </span>
-                <span className="text-sm font-medium">
-                  Source : {item.filename}
+                <span className="text-xs font-bold">
+                  {item.title || `Tableau ${index + 1}`}
                 </span>
               </div>
 
               {/* Tableau HTML responsive */}
-              <div
-                className="overflow-x-auto rounded border"
-                style={{ borderColor: "#5D5E5D" }}
-              >
-                <table
-                  className="min-w-full divide-y"
+              {rows.length === 0 ? (
+                <p className="text-xs italic text-gray-500">
+                  Aucune donnée à afficher.
+                </p>
+              ) : (
+                <div
+                  className="overflow-x-auto rounded border"
                   style={{ borderColor: "#5D5E5D" }}
                 >
-                  <thead>
-                    <tr style={{ backgroundColor: "#CAEEFF" }}>
-                      {columns.map((col) => (
-                        <th
-                          key={col}
-                          className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider border-r last:border-r-0"
-                          style={{ borderColor: "#5D5E5D", color: "#5D5E5D" }}
-                        >
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody
-                    className="divide-y"
+                  <table
+                    className="min-w-full divide-y"
                     style={{ borderColor: "#5D5E5D" }}
                   >
-                    {item.data.map((row, rowIndex) => (
-                      <tr
-                        key={rowIndex}
-                        className="transition-colors hover:bg-opacity-50"
-                        style={{
-                          backgroundColor:
-                            rowIndex % 2 === 0 ? "#BEE9E8" : "#CAEEFF",
-                        }}
-                      >
+                    <thead>
+                      <tr style={{ backgroundColor: "#CAEEFF" }}>
                         {columns.map((col) => (
-                          <td
+                          <th
                             key={col}
-                            className="px-4 py-2 text-sm border-r last:border-r-0 whitespace-nowrap"
+                            className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider border-r last:border-r-0"
                             style={{ borderColor: "#5D5E5D", color: "#5D5E5D" }}
                           >
-                            {row[col] !== null && row[col] !== undefined
-                              ? String(row[col])
-                              : "-"}
-                          </td>
+                            {col}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody
+                      className="divide-y"
+                      style={{ borderColor: "#5D5E5D" }}
+                    >
+                      {rows.map(
+                        (row: Record<string, any>, rowIndex: number) => (
+                          <tr
+                            key={rowIndex}
+                            className="transition-colors hover:bg-opacity-50"
+                            style={{
+                              backgroundColor:
+                                rowIndex % 2 === 0 ? "#BEE9E8" : "#CAEEFF",
+                            }}
+                          >
+                            {columns.map((col) => (
+                              <td
+                                key={col}
+                                className="px-4 py-2 text-xs border-r last:border-r-0 whitespace-nowrap"
+                                style={{
+                                  borderColor: "#5D5E5D",
+                                  color: "#5D5E5D",
+                                }}
+                              >
+                                {row[col] !== null && row[col] !== undefined
+                                  ? String(row[col])
+                                  : "-"}
+                              </td>
+                            ))}
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           );
         })}
@@ -530,7 +482,7 @@ export default function RAGInterface() {
                       type="file"
                       className="hidden"
                       onChange={handleFileChange}
-                      accept=".xlsx,.xls,.pdf,.docx"
+                      accept=".xlsx,.xls,.pdf,.docx,.msg,.eml"
                     />
                   </label>
 
@@ -602,9 +554,10 @@ export default function RAGInterface() {
                                 color: "#5D5E5D",
                               }}
                             >
-                              <option value="cr">cr</option>
+                              <option value="tableau">tableau</option>
                               <option value="planning">planning</option>
-                              <option value="pdf">pdf</option>
+                              <option value="texte">texte</option>
+                              <option value="mail">mail</option>
                             </select>
                           </td>
                           <td className="p-1 max-w-[80px]">
@@ -730,10 +683,10 @@ export default function RAGInterface() {
                       color: "#5D5E5D",
                     }}
                   >
-                    <option value="ALL">tous</option>
-                    <option value="cr">cr</option>
-                    <option value="planning">planning</option>
-                    <option value="pdf">autre</option>
+                    <option value="tous">tous</option>
+                    <option value="tableau">compte-rendus tabulaires</option>
+                    <option value="planning">plannings</option>
+                    <option value="texte">documents texte</option>
                   </select>
                 </div>
               </div>
@@ -818,10 +771,9 @@ export default function RAGInterface() {
           <div className="max-w-xl mx-auto space-y-4 w-full">
             {messages.map((msg, index) => {
               // On vérifie directement si le message embarque des données structurées JSON
-              const hasTable =
-                msg.sender === "bot" &&
-                msg.structuredResults &&
-                msg.structuredResults.length > 0;
+              // On vérifie si le message contient un tableau ou un document unique
+              const hasTable = msg.sender === "bot" && msg.tables;
+              const hasDocument = msg.sender === "bot" && msg.documents;
 
               return (
                 <div
@@ -858,7 +810,10 @@ export default function RAGInterface() {
                     {hasTable && (
                       <button
                         onClick={() =>
-                          setShowTableModal(msg.structuredResults ?? null)
+                          setShowTableModal({
+                            tables: msg.tables,
+                            documents: msg.documents,
+                          })
                         }
                         className="absolute top-2 right-2 px-2 py-0.5 flex items-center gap-1 shadow-xs transition z-10 hover:bg-black/5 rounded"
                         title="Afficher en plein écran"
@@ -867,10 +822,18 @@ export default function RAGInterface() {
                       </button>
                     )}
 
-                    {/* Affichage : Soit on a un tableau JSON, soit c'est du texte normal */}
                     {hasTable ? (
                       <div className="overflow-x-auto my-1 pt-5">
-                        <TableResult results={msg.structuredResults ?? []} />
+                        <TableResult results={msg.tables ?? []} />
+                      </div>
+                    ) : hasDocument ? (
+                      <div className="space-y-1 pt-1">
+                        <div className="font-bold">
+                          {msg.documents?.[0]?.title}
+                        </div>
+                        <p className="whitespace-pre-wrap">
+                          {msg.documents?.[0]?.data}
+                        </p>
                       </div>
                     ) : (
                       <p className="whitespace-pre-wrap">{msg.text}</p>
@@ -1172,6 +1135,7 @@ export default function RAGInterface() {
           </div>
         </div>
       )}
+
       {/* MODALE DE PLEIN ÉCRAN POUR LE TABLEAU */}
       {showTableModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
@@ -1188,19 +1152,45 @@ export default function RAGInterface() {
                 Visualisation détaillée du tableau
               </h3>
               <button
-                type="button"
                 onClick={() => setShowTableModal(null)}
-                className="p-1 rounded-md hover:bg-[#BEE9E8] transition opacity-70 hover:opacity-100"
-                style={{ color: "#5D5E5D" }}
-                title="Fermer"
+                className="p-1 rounded hover:bg-black/5"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Rendu des Tables en plein écran */}
+              {showTableModal.tables && showTableModal.tables.length > 0 && (
+                <div className="space-y-4">
+                  {showTableModal.tables.map((tableItem, idx) => (
+                    <div key={idx} className="space-y-2">
+                      <TableResult results={[tableItem]} />
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {/* Contenu du tableau en grand format avec scroll horizontal ET vertical */}
-            <div className="flex-1 overflow-auto bg-white rounded-md p-4 border border-[#5D5E5D]/30 shadow-inner">
-              <TableResult results={showTableModal} />
+              {/* Rendu des Documents textuels en plein écran */}
+              {showTableModal.documents &&
+                showTableModal.documents.length > 0 && (
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider">
+                      Extraits textuels (Documents)
+                    </h4>
+                    {showTableModal.documents.map((doc, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded border bg-white text-xs space-y-1 shadow-xs"
+                        style={{ borderColor: "#5D5E5D" }}
+                      >
+                        <div className="font-bold text-blue-600">
+                          {doc.title}
+                        </div>
+                        <p className="whitespace-pre-wrap">{doc.data}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
             </div>
           </div>
         </div>

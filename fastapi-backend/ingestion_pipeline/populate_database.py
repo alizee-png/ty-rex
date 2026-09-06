@@ -8,24 +8,15 @@ def populate_database(parsed_data: Dict[str, Any]):
 
     documents = []
 
-    if parsed_data["metadata"]["type"] in {"cr", "planning"}:
+    if parsed_data["metadata"]["type"] in {"tableau", "planning"}:
 
         df = parsed_data["content"]
         filename = parsed_data["metadata"]["filename"]
+        parquet_repertory = parsed_data["metadata"]["type"]
+
         base_filename = Path(filename).stem
 
-        parquet_type = parsed_data["metadata"]["type"]
-
-        #spécifique aux crs pour visualisation du template par l'utilisateur
-        if parquet_type == "cr":
-            parquet_template = parsed_data["metadata"]["template"]
-            df["template"] = ", ".join(map(str, parquet_template))
-
-        #ajout des métadonnées dans le df
-        df["filename"] = filename
-        df["type"] = parquet_type
-
-        parquet_dir = Path(PARQUET_DB_DIR) / parquet_type
+        parquet_dir = Path(PARQUET_DB_DIR) / parquet_repertory
         parquet_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = parquet_dir / f"{base_filename}.parquet"
         df.to_parquet(parquet_path, index=False)

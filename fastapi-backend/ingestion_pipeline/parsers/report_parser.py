@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any, BinaryIO
 from .base import BaseParser
 import docx
@@ -24,11 +25,17 @@ class ExcelReportParser(BaseParser):
         #conversion des colonnes en mode string pour stockage parquet
         df = df.astype(str)
 
+        #ajout des métadonnées à la df
+        doc_type = "tableau"
+        df["filename"] = filename
+        df["type"] = doc_type
+        df["template"] = json.dumps(template, ensure_ascii=False)
+
         return {
             "content": df,
             "metadata": {
                 "filename": filename,
-                "type": "cr",
+                "type": doc_type,
                 "template" : template,
             }
 
@@ -63,11 +70,17 @@ class WordReportParser(BaseParser):
         #conversion des colonnes en mode string pour stockage parquet
         df = df.astype(str)
 
+        #ajout des métadonnées à la df
+        doc_type = "tableau"
+        df["filename"] = filename
+        df["type"] = doc_type
+        df["template"] = json.dumps(template, ensure_ascii=False)
+
         return {
             "content": df,
             "metadata": {
                 "filename": filename,
-                "type": "cr",
+                "type": doc_type,
                 "template" : template,
             }
         }
