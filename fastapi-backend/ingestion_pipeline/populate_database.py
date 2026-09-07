@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any,  Dict
 
-from config import PARQUET_DB_DIR, vector_store
+from config import PARQUET_DB_DIR, document_vector_store, mail_vector_store
 
 
 def populate_database(parsed_data: Dict[str, Any]):
@@ -28,6 +28,10 @@ def populate_database(parsed_data: Dict[str, Any]):
         for chunk in chunks:
             chunk.metadata.update(file_metadata)
 
-        vector_store.add_documents(chunks)
+        if file_metadata["type"] == "mail":
+            mail_vector_store.add_documents(chunks)
+        else:
+            document_vector_store.add_documents(chunks)
+
 
 

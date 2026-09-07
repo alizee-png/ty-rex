@@ -16,7 +16,6 @@ from config import DATA_DIR
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-
 app = FastAPI()
  
 app.add_middleware(
@@ -36,7 +35,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[Message]
 
-#--- endpoints
+#--- erreur
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     print("--- ERREUR 422 DÉTAILLÉE ---")
@@ -58,26 +57,21 @@ def read_root():
 #answering the chat
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
-    current_user_message = next(
-        (msg.content for msg in reversed(request.messages) if msg.role == "user"),
-        None,
-    )
-    if not current_user_message:
-        raise HTTPException(status_code=400, detail="Le message utilisateur est vide.")
 
+    chat_history_text = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
 
-    result = agent_executor.invoke({"input": current_user_message})
+    print(chat_history_text)
+
+    result = agent_executor.invoke({"input": chat_history_text})
 
     # 1. Le texte de synthèse rédigé par l'agent
     synthesis_text = result.get("output", "")
 
-    print(synthesis_text)
-
     # 2. Extraction des tableaux et des documents des étapes intermédiaires
+    intermediate_steps = result.get("intermediate_steps", [])
     collected_tables = []
     collected_documents = []
-    intermediate_steps = result.get("intermediate_steps", [])
-    
+
     for action, tool_output in intermediate_steps:
 
         if isinstance(tool_output, dict):
@@ -85,9 +79,6 @@ async def chat_endpoint(request: ChatRequest):
                 collected_tables.extend(tool_output["tables"])
             if "documents" in tool_output:
                 collected_documents.extend(tool_output["documents"])
-
-    print(collected_tables)
-    print(collected_documents)
 
     # 3. Réponse unifiée complète conforme au contrat
     return {
@@ -193,7 +184,7 @@ async def upload_document(
 @app.get("/api/documents")
 async def list_documents():
     try:
-        documents = get_indexed_documents()
+        documents = get_indexed_documents(include_mails=True, include_documents=True, include_parquet=True)
         print("DEBUG - Documents lus :", documents) # <--- Regarde ton terminal ici
         return {
             "status": "success",

@@ -253,19 +253,21 @@ export default function RAGInterface() {
 
     const userText = inputMessage;
 
-    const updatedMessages = [{ sender: "user" as const, text: userText }];
+    // tableau historique messages
+    const updatedMessages = [
+      ...messages,
+      { sender: "user" as const, text: userText },
+    ];
 
     setMessages(updatedMessages);
     setInputMessage("");
     setIsChatLoading(true);
 
     try {
-      const payloadMessages = [
-        {
-          role: "user",
-          content: userText,
-        },
-      ];
+      const payloadMessages = updatedMessages.map((msg) => ({
+        role: msg.sender === "user" ? "user" : "assistant",
+        content: msg.text,
+      }));
 
       const res = await fetch(`${API_BASE}/chat`, {
         method: "POST",

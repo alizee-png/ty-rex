@@ -2,9 +2,9 @@ from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from config import llm
-from tools.tools import query_chroma, query_parquet, compare_plannings, search_documents, query_global_database
+from tools.tools import query_documentation, query_mails, query_parquet, compare_plannings, search_documents, query_production
 
-tools = [query_chroma, query_parquet, compare_plannings, search_documents, query_global_database]
+tools = [query_mails, query_documentation, query_parquet, compare_plannings, search_documents, query_production]
 
 
 prompt = ChatPromptTemplate.from_messages(
@@ -19,8 +19,6 @@ prompt = ChatPromptTemplate.from_messages(
                 "Si des informations critiques sont manquantes pour exécuter un outil, demande une précision à l'utilisateur avant d'agir. \n"
                 "Utilise TOUJOURS search_documents pour associer la requête de l'utilisateur à un fichier."
 
-                "Si l'utilisateur te demande de chercher dans toute la base de données, utilise query_global_database. \n"
-
                 "REGLES STRICTES pour répondre à l'utilisateur :\n"
                     "Donne d'abord une réponse synthétique à la question utilisateur, puis cite tes sources."
 
@@ -33,14 +31,10 @@ prompt = ChatPromptTemplate.from_messages(
                     "- Si la valeur dans la colonne 'Analyse_Fin' est POSITIVE, la tâche est en retard"
                     "- Colonne 'Analyse_Durée' : indique la différence de durée d'une tâche entre les deux plannings"
                     "- Colonne 'Nouvelles_lignes' : indique quelles lignes ont été ajoutées "
-                
+
                 "Quand tu utilises query_parquet :"
                     "Répond de manière synthétique mais cite les dates exactes."
                     "- Source à citer : Nom du ou des documents. \n"
-
-                "Quand tu utilises query_main_documentation :"
-                    "Répond de manière synthétique."
-                    "- Source à citer : Nom du document et la page\n"
 
 
                 
@@ -55,20 +49,3 @@ prompt = ChatPromptTemplate.from_messages(
 agent = create_tool_calling_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True, return_intermediate_steps=True)
 
-#si router trop peu efficace, réfléchir à créer un router selon mots-clés dans requête utilisateur
-#télécharger = ingestion
-#cr, compterendus = query_report
-#à écrire puisqu'on a sorti l'ingestion du truc 
-
-if __name__ == "__main__":
-    # Test RAG
-    # agent_executor.invoke({"input": "Que disent nos documents sur la procédure d'ingestion ?"})
-    
-    # Test Analyse Parquet
-    # agent_executor.invoke({"input": "Donne-moi un aperçu des données du fichier planning.parquet"})
-    
-    # Test Calcul
-    # agent_executor.invoke({"input": "Combien font (450 * 12) / 3.5 ?"})
-    
-    # Test Internet
-    agent_executor.invoke({"input": "Que dit sur le CR sur le mur de soutènement ?"})

@@ -7,19 +7,18 @@ from typing import Any, Optional, List, TypedDict, Dict
 from typing import cast
 from langchain_core.tools import tool
 from pydantic.v1 import BaseModel, Field
-from config import PARQUET_DB_DIR, vector_store
+from config import PARQUET_DB_DIR, document_vector_store, mail_vector_store
 from config import llm
 from ingestion_pipeline.operate_database import get_indexed_documents
 
 
 #définition des schémas attendus pour la sortie structurée du LLM
-class ChromaQueryStructure(BaseModel):
-    query: str = Field(description="La requête utilisateur.")
-    doc_type: Optional[str] = Field(description="Type de document ciblé si mentionné (ex: planning, compte-rendu)")
-    subject: Optional[str] = Field(description="Le sujet du message.")
-    sender: Optional[str] = Field(description="L'expéditeur du message.")
-    recipient: Optional[str] = Field(description="Le destinataire du message.")
-    date: Optional[str] = Field(description="La date du message.")
+class MailQueryStructure(BaseModel):
+    search_term: Optional[str] = Field(description="Mot-clé issu de la requête utilisateur.")
+    subject: Optional[str] = Field(description="Sujet du message.")
+    sender: Optional[str] = Field(description="Expéditeur du message.")
+    recipient: Optional[str] = Field(description="Destinataire du message.")
+    date: Optional[str] = Field(description="Date du message.")
 
 class ParquetQueryStructure(BaseModel):
     search_terms: List[str] = Field(description="Liste des mots-clés extraits de la requête")
@@ -32,49 +31,115 @@ class StandardToolResponse(TypedDict):
     tables: List[Dict[str, Any]]
     documents: List[Dict[str, Any]]
 
-
 @tool
-def query_chroma(query: str, doc_type: Optional[str] = None, subject: Optional[str] = None, sender: Optional[str] = None, recipient: Optional[str] = None, date: Optional[str] = None) -> StandardToolResponse:
+def query_documentation(query: str) -> StandardToolResponse:
     """Utile pour chercher des informations dans la documentation générale stockée dans chromadb.
-    Ne PAS utiliser pour les documents tableaux ou plannings stockés dans parquet. 
-    doc_type = texte et doc_type = mail -> 'query_chroma'
+    Ne PAS utiliser pour les tableaux, plannings ou mails. 
+    doc_type = texte -> query_documentation
+
 
     Args:
-        query: str - La requête textuelle ou le sujet recherché.
-        doc_type: str - Le type de document à rechercher (optionnel) - soit 'texte' soit 'mail'.
+        query: str
+    """
+    try:
+        results = document_vector_store.similarity_search(query, k=3)
+
+        if not results:
+            return {
+                "message": "Aucun document correspondant trouvé.",
+                "tables": [],
+                "documents": []
+            }
+
+        json_dict: StandardToolResponse = {
+                "message": "Voici les résultats de votre recherche dans les fichiers :",
+                "tables": [],
+                "documents": []
+            }
+
+
+        for doc in results:
+            filename = doc.metadata.get("filename", "Unknown file")
+            page_num = doc.metadata.get("page_number", None)
+            total_pages = doc.metadata.get("total_pages", None)
+            para_num = doc.metadata.get("paragraph_number")
+            total_paragraphs = doc.metadata.get("total_paragraphs")
+
+            source_info = [f"Fichier : {filename}"]
+            if page_num and total_pages:
+                source_info.append(f"Page : {page_num}/{total_pages}")
+            if para_num and total_paragraphs:
+                source_info.append(f"Paragraphe : {para_num}/{total_paragraphs}")
+
+            source_label = " | ".join(source_info)
+            json_dict["documents"].append({
+                "title": f"Source : {source_label}",
+                "data": doc.page_content.strip() 
+                })
+
+        return json_dict
+    
+    except Exception as e:
+        return {
+                "message": f"Erreur lors de la recherche documentaire : {e}",
+                "tables": [],
+                "documents": []
+                }
+
+
+
+@tool
+def query_mails(search_term: Optional[str] = None, subject: Optional[str] = None, sender: Optional[str] = None, recipient: Optional[str] = None, date: Optional[str] = None) -> StandardToolResponse:
+    """Utile pour chercher des informations dans les mails stockés dans chromadb.
+    Ne PAS utiliser pour les documents tableaux ou plannings stockés dans parquet ou les documents textes stockés dans chromadb..
+    doc_type = mail -> query_mails
+
+    Args:
+        search_term: str - Mot-clé issu de la requête utilisateur.
         subject : str - Filtrer par le sujet du message (optionnel).
         sender: str - Filtrer par l'expéditeur du message (optionnel).
         recipient: str - Filtrer par le destinataire du message (optionnel).
         date: str - Filtrer par la date du message (optionnel).
     """
     try:
-
-        conditions = []
-        if doc_type:
-            conditions.append({"type": {"$eq": doc_type}})
-        if subject:
-            conditions.append({"subject": {"$eq": subject}})
-        if sender:
-            conditions.append({"sender": {"$eq": sender}})
-        if recipient:
-            conditions.append({"recipient": {"$eq": recipient}})
-        if date:
-            conditions.append({"date": {"$eq": date}})
-
-        print(conditions)
-
-        if len(conditions) == 1:
-            metadata_filters = conditions[0]
-        elif len(conditions) > 1:
-            metadata_filters = {"$and": conditions}
+        # 1. Si la query est vide, on récupère un lot large via collection.get() sans filtre strict
+        if not search_term or not search_term.strip():
+            collection = mail_vector_store._collection
+            raw_results = collection.get()
+            mails = raw_results.get("documents") or []
+            metadatas = raw_results.get("metadatas") or []
+            
+            results = []
+            for text, meta in zip(mails, metadatas):
+                class DummyDoc:
+                    def __init__(self, page_content, metadata):
+                        self.page_content = page_content
+                        self.metadata = metadata
+                results.append(DummyDoc(text, meta))
         else:
-            metadata_filters = {}
+            # 2. Si une query textuelle existe, recherche vectorielle large
+            results = mail_vector_store.similarity_search(search_term, k=10)
 
-        search_kwargs: dict[str, Any] = {"k": 3}
-        if metadata_filters:
-            search_kwargs["filter"] = metadata_filters
+        # 3. Filtrage souple en Python (insensible à la casse, correspondance partielle)
+        filtered_results = []
+        for doc in results:
+            meta = doc.metadata
+            match = True
+            
+            if subject and subject.lower() not in str(meta.get("subject", "")).lower():
+                match = False
+            if sender and sender.lower() not in str(meta.get("sender", "")).lower():
+                match = False
+            if recipient and recipient.lower() not in str(meta.get("recipient", "")).lower():
+                match = False
+            if date and date.lower() not in str(meta.get("date", "")).lower():
+                match = False
+                
+            if match:
+                filtered_results.append(doc)
 
-        results = vector_store.similarity_search(query, **search_kwargs)
+        # On restreint aux k premiers résultats pertinents
+        results = filtered_results[:3]
 
         if not results:
             return {
@@ -96,10 +161,6 @@ def query_chroma(query: str, doc_type: Optional[str] = None, subject: Optional[s
             sender_val = meta.get("sender")
             recipient_val = meta.get("recipient")
             date_val = meta.get("date")
-            page_num = meta.get("page_number")
-            total_pages = meta.get("total_pages")
-            para_num = meta.get("paragraph_number")
-            total_paragraphs = meta.get("total_paragraphs")
 
             source_info = [f"Fichier : {filename}"]
             if subject_val:
@@ -110,10 +171,6 @@ def query_chroma(query: str, doc_type: Optional[str] = None, subject: Optional[s
                 source_info.append(f"À : {recipient_val}")
             if date_val:
                 source_info.append(f"Date : {date_val}")
-            if page_num and total_pages:
-                source_info.append(f"Page : {page_num}/{total_pages}")
-            if para_num and total_paragraphs:
-                source_info.append(f"Paragraphe : {para_num}/{total_paragraphs}")
 
             source_label = " | ".join(source_info)
             json_dict["documents"].append({
@@ -125,8 +182,8 @@ def query_chroma(query: str, doc_type: Optional[str] = None, subject: Optional[s
     
     except Exception as e:
         return {
-                    "message": f"Erreur lors de la recherche documentaire : {e}",
-                    "tables": [],
+                "message": f"Erreur lors de la recherche documentaire : {e}",
+                "tables": [],
                 "documents": []
                 }
 
@@ -258,9 +315,10 @@ def query_parquet(search_terms: List[str], operator: Optional[str] = None, doc_t
 
 
 @tool
-def query_global_database(query: str) -> StandardToolResponse:
-    """Interroge toute la base de données.
-    A utiliser pour des requêtes qui concernent l'ensemble de la base de données.
+def query_production(query: str) -> StandardToolResponse:
+    """Si l'utilisateur te demande de chercher dans tous les documents produits, utilise query_production. 
+    A utiliser pour des requêtes qui concernent les documents produits (plannings, mails, compte-rendus).
+    Ne PAS utiliser pour la documentation générale.
     
     Args:
         query: Requête utilisateur à analyser.
@@ -274,20 +332,19 @@ def query_global_database(query: str) -> StandardToolResponse:
     }
 
     #--- interroger chromaDB
-    structured_llm_chroma = llm.with_structured_output(ChromaQueryStructure)
-    args_chroma: ChromaQueryStructure = cast(ChromaQueryStructure, structured_llm_chroma.invoke(prompt))
-    chroma_results = query_chroma.invoke({
-        "query": args_chroma.query,
-        "doc_type": args_chroma.doc_type,
+    structured_llm_chroma = llm.with_structured_output(MailQueryStructure)
+    args_chroma: MailQueryStructure = cast(MailQueryStructure, structured_llm_chroma.invoke(prompt))
+    mails_results = query_mails.invoke({
+        "search_term": args_chroma.search_term,
         "subject": args_chroma.subject,
         "sender": args_chroma.sender,
         "recipient": args_chroma.recipient,
         "date": args_chroma.date,
         })
 
-    if isinstance(chroma_results, dict):
-        json_dict["tables"].extend(chroma_results.get("tables", []))
-        json_dict["documents"].extend(chroma_results.get("documents", []))
+    if isinstance(mails_results, dict):
+        json_dict["tables"].extend(mails_results.get("tables", []))
+        json_dict["documents"].extend(mails_results.get("documents", []))
     
     #--- interroger parquet
     structured_llm_parquet = llm.with_structured_output(ParquetQueryStructure)
@@ -309,7 +366,6 @@ def query_global_database(query: str) -> StandardToolResponse:
 
 @tool
 def compare_plannings(filename: str, filename_reference: str) -> StandardToolResponse:
-
     """Utile pour comparer deux plannings stockés sous format parquet. 
     Ne PAS utiliser pour les pdfs ou les compte-rendus. 
     A utiliser quand la question contient 'planning', 'plannings' avec le mot clé 'source'. 
@@ -443,7 +499,7 @@ def search_documents() -> str:
     Récupère la liste de tous les documents indexés. 
     À utiliser pour trouver le nom exact d'un fichier à partir d'une demande approximative.
     """
-    docs = get_indexed_documents()
+    docs = get_indexed_documents(include_mails=True, include_documents=True, include_parquet=True)
     
     if not docs:
         return "Aucun document n'est actuellement indexé."

@@ -10,7 +10,7 @@ class PlanningParser(BaseParser):
     
     def parse(self, file_obj: BinaryIO, filename: str, **kwargs: Any) -> Dict[str, Any]:
         
-        cols = ['N° Unique', 'Nom', 'Durée', 'Début', 'Fin']
+        cols = ['N° Unique', 'Intervenant', 'Nom', 'Durée', 'Début', 'Fin']
         df = pd.read_excel(file_obj, usecols=cols, engine="openpyxl")
 
         df['Début_ISO'] = df['Début'].apply(convert_text_to_date)

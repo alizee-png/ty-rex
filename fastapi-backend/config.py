@@ -20,9 +20,22 @@ load_dotenv()
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
 
-#documents généraux : pdfs
-vector_store = Chroma(
-    collection_name="documents_generaux",
+document_vector_store = Chroma(
+    collection_name="documents_produits",
     embedding_function=embeddings,
     persist_directory=str(CHROMA_DB_DIR)
 )
+
+mail_vector_store = Chroma(
+    collection_name="mails_produits",
+    embedding_function=embeddings,
+    persist_directory=str(CHROMA_DB_DIR)
+)
+
+#documents partagés à l'échelle de l'entreprise
+'''general_documentation_vector_store = Chroma(
+    collection_name="documents_generaux",
+    embedding_function=embeddings,
+    persist_directory=str(CHROMA_DB_DIR)
+)'''
+
