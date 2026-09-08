@@ -21,7 +21,7 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
 
 document_vector_store = Chroma(
-    collection_name="documents_produits",
+    collection_name="documentation_mission",
     embedding_function=embeddings,
     persist_directory=str(CHROMA_DB_DIR)
 )
